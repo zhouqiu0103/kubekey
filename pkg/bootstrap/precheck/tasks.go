@@ -317,3 +317,100 @@ func (g *GetKubernetesNodesStatus) Execute(runtime connector.Runtime) error {
 	g.PipelineCache.Set(common.ClusterNodeCRIRuntimes, cri)
 	return nil
 }
+
+type GetK3sKubeConfig struct {
+	common.KubeAction
+}
+
+func (g *GetK3sKubeConfig) Execute(runtime connector.Runtime) error {
+	if exist, err := runtime.GetRunner().FileExist("$HOME/.kube/config"); err != nil {
+		return err
+	} else {
+		if exist {
+			return nil
+		} else {
+			if exist, err := runtime.GetRunner().FileExist("/etc/rancher/k3s/k3s.yaml"); err != nil {
+				return err
+			} else {
+				if exist {
+					if _, err := runtime.GetRunner().Cmd("mkdir -p $HOME/.kube", false); err != nil {
+						return err
+					}
+					if _, err := runtime.GetRunner().SudoCmd("cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config", false); err != nil {
+						return err
+					}
+					userId, err := runtime.GetRunner().Cmd("echo $(id -u)", false)
+					if err != nil {
+						return errors.Wrap(errors.WithStack(err), "get user id failed")
+					}
+
+					userGroupId, err := runtime.GetRunner().Cmd("echo $(id -g)", false)
+					if err != nil {
+						return errors.Wrap(errors.WithStack(err), "get user group id failed")
+					}
+
+					chownKubeConfig := fmt.Sprintf("chown -R %s:%s $HOME/.kube", userId, userGroupId)
+					if _, err := runtime.GetRunner().SudoCmd(chownKubeConfig, false); err != nil {
+						return errors.Wrap(errors.WithStack(err), "chown user k3s kube config failed")
+					}
+				}
+			}
+		}
+	}
+	return errors.New("k3s kube config not found")
+}
+
+type GetAllNodesK3sVersion struct {
+	common.KubeAction
+}
+
+func (g *GetAllNodesK3sVersion) Execute(runtime connector.Runtime) error {
+	host := runtime.RemoteHost()
+	nodeK3sVersion, err := runtime.GetRunner().SudoCmd("/usr/local/bin/k3s --version | grep k3s | cut -d ' ' -f3 | cut -d '+' -f1", false)
+	if err != nil {
+		return errors.Wrap(err, "get current k3s version failed")
+	}
+	host.GetCache().Set(common.NodeK3sVersion, nodeK3sVersion)
+	return nil
+}
+
+type CalculateMinK3sVersion struct {
+	common.KubeAction
+}
+
+func (g *CalculateMinK3sVersion) Execute(runtime connector.Runtime) error {
+	versionList := make([]*versionutil.Version, 0, len(runtime.GetHostsByRole(common.K3s)))
+	for _, host := range runtime.GetHostsByRole(common.K3s) {
+		version, ok := host.GetCache().GetMustString(common.NodeK3sVersion)
+		if !ok {
+			return errors.Errorf("get node %s k3s version failed by host cache", host.GetName())
+		}
+		if versionObj, err := versionutil.ParseSemantic(version); err != nil {
+			return errors.Wrap(err, "parse node version failed")
+		} else {
+			versionList = append(versionList, versionObj)
+		}
+	}
+
+	minVersion := versionList[0]
+	for _, version := range versionList {
+		if !minVersion.LessThan(version) {
+			minVersion = version
+		}
+	}
+	g.PipelineCache.Set(common.K3sVersion, fmt.Sprintf("v%s", minVersion))
+	return nil
+}
+
+type CheckDesiredK3sVersion struct {
+	common.KubeAction
+}
+
+func (k *CheckDesiredK3sVersion) Execute(_ connector.Runtime) error {
+	if ok := kubernetes.VersionSupport(k.KubeConf.Cluster.Kubernetes.Version); !ok {
+		return errors.New(fmt.Sprintf("does not support upgrade to k3s %s",
+			k.KubeConf.Cluster.Kubernetes.Version))
+	}
+	k.PipelineCache.Set(common.DesiredK3sVersion, k.KubeConf.Cluster.Kubernetes.Version)
+	return nil
+}

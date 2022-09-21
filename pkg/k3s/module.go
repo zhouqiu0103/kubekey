@@ -17,12 +17,17 @@
 package k3s
 
 import (
+	"fmt"
+	"path/filepath"
+
+	"github.com/pkg/errors"
+
+	"github.com/kubesphere/kubekey/pkg/binaries"
 	"github.com/kubesphere/kubekey/pkg/common"
 	"github.com/kubesphere/kubekey/pkg/core/action"
 	"github.com/kubesphere/kubekey/pkg/core/prepare"
 	"github.com/kubesphere/kubekey/pkg/core/task"
 	"github.com/kubesphere/kubekey/pkg/k3s/templates"
-	"path/filepath"
 )
 
 type StatusModule struct {
@@ -343,5 +348,133 @@ func (s *SaveKubeConfigModule) Init() {
 
 	s.Tasks = []task.Interface{
 		save,
+	}
+}
+
+type SetUpgradePlanModule struct {
+	common.KubeModule
+	Step UpgradeStep
+}
+
+func (s *SetUpgradePlanModule) Init() {
+	s.Name = fmt.Sprintf("SetUpgradePlanModule %d/%d", s.Step, len(UpgradeStepList))
+	s.Desc = "Set upgrade plan"
+
+	plan := &task.LocalTask{
+		Name:   "SetUpgradePlan",
+		Desc:   "Set upgrade plan",
+		Action: &SetUpgradePlan{Step: s.Step},
+	}
+
+	s.Tasks = []task.Interface{
+		plan,
+	}
+}
+
+type ProgressiveUpgradeModule struct {
+	common.KubeModule
+	Step UpgradeStep
+}
+
+func (p *ProgressiveUpgradeModule) Init() {
+	p.Name = fmt.Sprintf("ProgressiveUpgradeModule %d/%d", p.Step, len(UpgradeStepList))
+	p.Desc = fmt.Sprintf("Progressive upgrade %d/%d", p.Step, len(UpgradeStepList))
+
+	nextVersion := &task.LocalTask{
+		Name:    "CalculateNextVersion",
+		Desc:    "Calculate next upgrade version",
+		Prepare: new(NotEqualPlanVersion),
+		Action:  new(CalculateNextVersion),
+	}
+
+	download := &task.LocalTask{
+		Name:    "DownloadBinaries",
+		Desc:    "Download installation binaries",
+		Prepare: new(NotEqualPlanVersion),
+		Action:  new(binaries.K3sDownload),
+	}
+
+	syncBinary := &task.RemoteTask{
+		Name:     "SyncKubeBinary",
+		Desc:     "Synchronize kubernetes binaries",
+		Hosts:    p.Runtime.GetHostsByRole(common.K3s),
+		Prepare:  new(NotEqualPlanVersion),
+		Action:   new(SyncKubeBinary),
+		Parallel: true,
+		Retry:    2,
+	}
+
+	upgradeKubeMaster := &task.RemoteTask{
+		Name:     "UpgradeClusterOnMaster",
+		Desc:     "Upgrade cluster on master",
+		Hosts:    p.Runtime.GetHostsByRole(common.Master),
+		Prepare:  new(NotEqualPlanVersion),
+		Action:   &UpgradeKubeNode{ModuleName: p.Name},
+		Parallel: false,
+	}
+
+	cluster := NewK3sStatus()
+	p.PipelineCache.GetOrSet(common.ClusterStatus, cluster)
+
+	clusterStatus := &task.RemoteTask{
+		Name:     "GetClusterStatus",
+		Desc:     "Get kubernetes cluster status",
+		Hosts:    p.Runtime.GetHostsByRole(common.Master),
+		Prepare:  new(NotEqualPlanVersion),
+		Action:   new(GetClusterStatus),
+		Parallel: false,
+	}
+
+	upgradeKubeWorker := &task.RemoteTask{
+		Name:  "UpgradeClusterOnWorker",
+		Desc:  "Upgrade cluster on worker",
+		Hosts: p.Runtime.GetHostsByRole(common.Worker),
+		Prepare: &prepare.PrepareCollection{
+			new(NotEqualPlanVersion),
+			new(common.OnlyWorker),
+		},
+		Action:   &UpgradeKubeNode{ModuleName: p.Name},
+		Parallel: false,
+	}
+
+	currentVersion := &task.LocalTask{
+		Name:    "SetCurrentK3sVersion",
+		Desc:    "Set current k3s version",
+		Prepare: new(NotEqualPlanVersion),
+		Action:  new(SetCurrentK3sVersion),
+	}
+
+	p.Tasks = []task.Interface{
+		nextVersion,
+		download,
+		syncBinary,
+		upgradeKubeMaster,
+		clusterStatus,
+		upgradeKubeWorker,
+		currentVersion,
+	}
+}
+
+func (p *ProgressiveUpgradeModule) Until() (*bool, error) {
+	f := false
+	t := true
+	currentVersion, ok := p.PipelineCache.GetMustString(common.K3sVersion)
+	if !ok {
+		return &f, errors.New("get current k3s version failed by pipeline cache")
+	}
+	planVersion, ok := p.PipelineCache.GetMustString(common.PlanK3sVersion)
+	if !ok {
+		return &f, errors.New("get upgrade plan k3s version failed by pipeline cache")
+	}
+
+	if currentVersion != planVersion {
+		return &f, nil
+	} else {
+		originalDesired, ok := p.PipelineCache.GetMustString(common.DesiredK3sVersion)
+		if !ok {
+			return &f, errors.New("get original desired k3s version failed by pipeline cache")
+		}
+		p.KubeConf.Cluster.Kubernetes.Version = originalDesired
+		return &t, nil
 	}
 }

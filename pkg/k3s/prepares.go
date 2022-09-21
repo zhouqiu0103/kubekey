@@ -59,3 +59,23 @@ func (c *ClusterIsExist) PreCheck(_ connector.Runtime) (bool, error) {
 		return false, errors.New("get k3s cluster status by pipeline cache failed")
 	}
 }
+
+type NotEqualPlanVersion struct {
+	common.KubePrepare
+}
+
+func (n *NotEqualPlanVersion) PreCheck(runtime connector.Runtime) (bool, error) {
+	planVersion, ok := n.PipelineCache.GetMustString(common.PlanK3sVersion)
+	if !ok {
+		return false, errors.New("get upgrade plan k3s version failed by pipeline cache")
+	}
+
+	currentVersion, ok := n.PipelineCache.GetMustString(common.K3sVersion)
+	if !ok {
+		return false, errors.New("get cluster k3s version failed by pipeline cache")
+	}
+	if currentVersion == planVersion {
+		return false, nil
+	}
+	return true, nil
+}

@@ -20,13 +20,17 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	kubekeyapiv1alpha2 "github.com/kubesphere/kubekey/apis/kubekey/v1alpha2"
 	"github.com/kubesphere/kubekey/pkg/common"
 	"github.com/kubesphere/kubekey/pkg/core/action"
 	"github.com/kubesphere/kubekey/pkg/core/connector"
+	"github.com/kubesphere/kubekey/pkg/core/logger"
 	"github.com/kubesphere/kubekey/pkg/core/util"
 	"github.com/kubesphere/kubekey/pkg/files"
 	"github.com/kubesphere/kubekey/pkg/images"
@@ -506,5 +510,117 @@ func (s *SaveKubeConfig) Execute(_ connector.Runtime) error {
 		Create(context.TODO(), cm, metav1.CreateOptions{}); err != nil {
 		return err
 	}
+	return nil
+}
+
+type SetUpgradePlan struct {
+	common.KubeAction
+	Step UpgradeStep
+}
+
+func (s *SetUpgradePlan) Execute(_ connector.Runtime) error {
+	currentVersion, ok := s.PipelineCache.GetMustString(common.K3sVersion)
+	if !ok {
+		return errors.New("get current k3s version failed by pipeline cache")
+	}
+
+	desiredVersion, ok := s.PipelineCache.GetMustString(common.DesiredK3sVersion)
+	if !ok {
+		return errors.New("get desired k3s version failed by pipeline cache")
+	}
+	if cmp, err := versionutil.MustParseSemantic(currentVersion).Compare(desiredVersion); err != nil {
+		return err
+	} else if cmp == 1 {
+		logger.Log.Messagef(
+			common.LocalHost,
+			"The current version (%s) is greater than the target version (%s)",
+			currentVersion, desiredVersion)
+		os.Exit(0)
+	}
+
+	if s.Step == ToV121 {
+		v122 := versionutil.MustParseSemantic("v1.22.0")
+		atLeast := versionutil.MustParseSemantic(desiredVersion).AtLeast(v122)
+		cmp, err := versionutil.MustParseSemantic(currentVersion).Compare("v1.21.5")
+		if err != nil {
+			return err
+		}
+		if atLeast && cmp <= 0 {
+			desiredVersion = "v1.21.5"
+		}
+	}
+
+	s.PipelineCache.Set(common.PlanK3sVersion, desiredVersion)
+	return nil
+}
+
+type CalculateNextVersion struct {
+	common.KubeAction
+}
+
+func (c *CalculateNextVersion) Execute(_ connector.Runtime) error {
+	currentVersion, ok := c.PipelineCache.GetMustString(common.K3sVersion)
+	if !ok {
+		return errors.New("get current k3s version failed by pipeline cache")
+	}
+	planVersion, ok := c.PipelineCache.GetMustString(common.PlanK3sVersion)
+	if !ok {
+		return errors.New("get upgrade plan k3s version failed by pipeline cache")
+	}
+	nextVersionStr := calculateNextStr(currentVersion, planVersion)
+	c.KubeConf.Cluster.Kubernetes.Version = nextVersionStr
+	return nil
+}
+
+func calculateNextStr(currentVersion, desiredVersion string) string {
+	current := versionutil.MustParseSemantic(currentVersion)
+	target := versionutil.MustParseSemantic(desiredVersion)
+	var nextVersionMinor uint
+	if target.Minor() == current.Minor() {
+		nextVersionMinor = current.Minor()
+	} else {
+		nextVersionMinor = current.Minor() + 1
+	}
+
+	if nextVersionMinor == target.Minor() {
+		return desiredVersion
+	} else {
+		nextVersionPatchList := make([]int, 0)
+		for supportVersionStr := range files.FileSha256["k3s"]["amd64"] {
+			supportVersion := versionutil.MustParseSemantic(supportVersionStr)
+			if supportVersion.Minor() == nextVersionMinor {
+				nextVersionPatchList = append(nextVersionPatchList, int(supportVersion.Patch()))
+			}
+		}
+		sort.Ints(nextVersionPatchList)
+
+		nextVersion := current.WithMinor(nextVersionMinor)
+		nextVersion = nextVersion.WithPatch(uint(nextVersionPatchList[len(nextVersionPatchList)-1]))
+
+		return fmt.Sprintf("v%s", nextVersion.String())
+	}
+}
+
+type UpgradeKubeNode struct {
+	common.KubeAction
+	ModuleName string
+}
+
+func (u *UpgradeKubeNode) Execute(runtime connector.Runtime) error {
+	host := runtime.RemoteHost()
+	if _, err := runtime.GetRunner().SudoCmd("systemctl restart k3s", false); err != nil {
+		return errors.Wrap(errors.WithStack(err), fmt.Sprintf("restart k3s failed: %s", host.GetName()))
+	}
+
+	time.Sleep(10 * time.Second)
+	return nil
+}
+
+type SetCurrentK3sVersion struct {
+	common.KubeAction
+}
+
+func (s *SetCurrentK3sVersion) Execute(_ connector.Runtime) error {
+	s.PipelineCache.Set(common.K3sVersion, s.KubeConf.Cluster.Kubernetes.Version)
 	return nil
 }

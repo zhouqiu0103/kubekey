@@ -29,6 +29,7 @@ import (
 	"github.com/kubesphere/kubekey/pkg/core/module"
 	"github.com/kubesphere/kubekey/pkg/core/pipeline"
 	"github.com/kubesphere/kubekey/pkg/filesystem"
+	"github.com/kubesphere/kubekey/pkg/k3s"
 	"github.com/kubesphere/kubekey/pkg/kubernetes"
 	"github.com/kubesphere/kubekey/pkg/kubesphere"
 	"github.com/kubesphere/kubekey/pkg/loadbalancer"
@@ -67,6 +68,39 @@ func NewUpgradeClusterPipeline(runtime *common.KubeRuntime) error {
 	return nil
 }
 
+func NewK3sUpgradeClusterPipeline(runtime *common.KubeRuntime) error {
+	noArtifact := runtime.Arg.Artifact == ""
+
+	m := []module.Module{
+		&precheck.GreetingsModule{},
+		// &precheck.NodePreCheckModule{},
+		&precheck.K3sClusterPreCheckModule{},
+		&confirm.K3sUpgradeConfirmModule{Skip: runtime.Arg.SkipConfirmCheck},
+		&artifact.UnArchiveModule{Skip: noArtifact},
+		&k3s.SetUpgradePlanModule{Step: k3s.ToV121},
+		&k3s.ProgressiveUpgradeModule{Step: k3s.ToV121},
+		&loadbalancer.HaproxyModule{Skip: !runtime.Cluster.ControlPlaneEndpoint.IsInternalLBEnabled()},
+		&kubesphere.CleanClusterConfigurationModule{Skip: !runtime.Cluster.KubeSphere.Enabled},
+		&kubesphere.ConvertModule{Skip: !runtime.Cluster.KubeSphere.Enabled},
+		&kubesphere.DeployModule{Skip: !runtime.Cluster.KubeSphere.Enabled},
+		&kubesphere.CheckResultModule{Skip: !runtime.Cluster.KubeSphere.Enabled},
+		&k3s.SetUpgradePlanModule{Step: k3s.ToV121},
+		&k3s.ProgressiveUpgradeModule{Step: k3s.ToV122},
+		&filesystem.ChownModule{},
+		&certs.AutoRenewCertsModule{Skip: !runtime.Cluster.Kubernetes.EnableAutoRenewCerts()},
+	}
+
+	p := pipeline.Pipeline{
+		Name:    "K3sUpgradeClusterPipeline",
+		Modules: m,
+		Runtime: runtime,
+	}
+	if err := p.Start(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func UpgradeCluster(args common.Argument, downloadCmd string) error {
 	args.DownloadCommand = func(path, url string) string {
 		// this is an extension point for downloading tools, for example users can set the timeout, proxy or retry under
@@ -90,6 +124,10 @@ func UpgradeCluster(args common.Argument, downloadCmd string) error {
 	switch runtime.Cluster.Kubernetes.Type {
 	case common.Kubernetes:
 		if err := NewUpgradeClusterPipeline(runtime); err != nil {
+			return err
+		}
+	case common.K3s:
+		if err := NewK3sUpgradeClusterPipeline(runtime); err != nil {
 			return err
 		}
 	default:

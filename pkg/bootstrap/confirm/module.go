@@ -127,3 +127,27 @@ func (c *CheckFileExistModule) Init() {
 		check,
 	}
 }
+
+type K3sUpgradeConfirmModule struct {
+	common.KubeModule
+	Skip bool
+}
+
+func (k *K3sUpgradeConfirmModule) IsSkip() bool {
+	return k.Skip
+}
+
+func (k *K3sUpgradeConfirmModule) Init() {
+	k.Name = "K3sUpgradeConfirmModule"
+	k.Desc = "Display k3s upgrade confirmation form"
+
+	display := &task.LocalTask{
+		Name:   "K3sConfirmForm",
+		Desc:   "Display k3s confirmation form",
+		Action: new(K3sUpgradeConfirm),
+	}
+
+	k.Tasks = []task.Interface{
+		display,
+	}
+}

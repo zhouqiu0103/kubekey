@@ -169,3 +169,87 @@ func (c *ClusterPreCheckModule) Init() {
 		getKubernetesNodesStatus,
 	}
 }
+
+type K3sClusterPreCheckModule struct {
+	common.KubeModule
+}
+
+func (k *K3sClusterPreCheckModule) Init() {
+	k.Name = "K3sClusterPreCheckModule"
+	k.Desc = "Do pre-check on k3s cluster"
+
+	getK3sKubeConfig := &task.RemoteTask{
+		Name:     "getK3sKubeConfig",
+		Desc:     "Get k3s KubeConfig file",
+		Hosts:    k.Runtime.GetHostsByRole(common.Master),
+		Prepare:  new(common.OnlyFirstMaster),
+		Action:   new(GetK3sKubeConfig),
+		Parallel: true,
+	}
+
+	getAllNodesK3sVersion := &task.RemoteTask{
+		Name:     "GetAllNodesK3sVersion",
+		Desc:     "Get all nodes k3s version",
+		Hosts:    k.Runtime.GetHostsByRole(common.K3s),
+		Action:   new(GetAllNodesK3sVersion),
+		Parallel: true,
+	}
+
+	calculateMinK3sVersion := &task.RemoteTask{
+		Name:     "CalculateMinK3sVersion",
+		Desc:     "Calculate min k3s version",
+		Hosts:    k.Runtime.GetHostsByRole(common.Master),
+		Prepare:  new(common.OnlyFirstMaster),
+		Action:   new(CalculateMinK3sVersion),
+		Parallel: true,
+	}
+
+	checkDesiredK3sVersion := &task.RemoteTask{
+		Name:     "CheckDesiredK3sVersion",
+		Desc:     "Check desired k3s version",
+		Hosts:    k.Runtime.GetHostsByRole(common.Master),
+		Prepare:  new(common.OnlyFirstMaster),
+		Action:   new(CheckDesiredK3sVersion),
+		Parallel: true,
+	}
+
+	ksVersionCheck := &task.RemoteTask{
+		Name:     "KsVersionCheck",
+		Desc:     "Check KubeSphere version",
+		Hosts:    k.Runtime.GetHostsByRole(common.Master),
+		Prepare:  new(common.OnlyFirstMaster),
+		Action:   new(KsVersionCheck),
+		Parallel: true,
+	}
+
+	dependencyCheck := &task.RemoteTask{
+		Name:  "DependencyCheck",
+		Desc:  "Check dependency matrix for KubeSphere and Kubernetes",
+		Hosts: k.Runtime.GetHostsByRole(common.Master),
+		Prepare: &prepare.PrepareCollection{
+			new(common.OnlyFirstMaster),
+			new(KubeSphereExist),
+		},
+		Action:   new(DependencyCheck),
+		Parallel: true,
+	}
+
+	getKubernetesNodesStatus := &task.RemoteTask{
+		Name:     "GetKubernetesNodesStatus",
+		Desc:     "Get kubernetes nodes status",
+		Hosts:    k.Runtime.GetHostsByRole(common.Master),
+		Prepare:  new(common.OnlyFirstMaster),
+		Action:   new(GetKubernetesNodesStatus),
+		Parallel: true,
+	}
+
+	k.Tasks = []task.Interface{
+		getK3sKubeConfig,
+		getAllNodesK3sVersion,
+		calculateMinK3sVersion,
+		checkDesiredK3sVersion,
+		ksVersionCheck,
+		dependencyCheck,
+		getKubernetesNodesStatus,
+	}
+}

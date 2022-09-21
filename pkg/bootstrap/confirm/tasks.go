@@ -339,3 +339,78 @@ func (c *CheckFile) Execute(runtime connector.Runtime) error {
 	}
 	return nil
 }
+
+type K3sUpgradeConfirm struct {
+	common.KubeAction
+}
+
+func (k *K3sUpgradeConfirm) Execute(runtime connector.Runtime) error {
+	pre := make([]map[string]string, len(runtime.GetAllHosts()), len(runtime.GetAllHosts()))
+	for i, host := range runtime.GetAllHosts() {
+		if v, ok := host.GetCache().Get(common.NodePreCheck); ok {
+			pre[i] = v.(map[string]string)
+		} else {
+			return errors.New("get node check result failed by host cache")
+		}
+	}
+
+	nodeStats, ok := k.PipelineCache.GetMustString(common.ClusterNodeStatus)
+	if !ok {
+		return errors.New("get cluster nodes status failed by pipeline cache")
+	}
+	fmt.Println("Cluster nodes status:")
+	fmt.Println(nodeStats + "\n")
+
+	fmt.Println("Upgrade Confirmation:")
+	currentK8sVersion, ok := k.PipelineCache.GetMustString(common.K8sVersion)
+	if !ok {
+		return errors.New("get current k3s version failed by pipeline cache")
+	}
+	fmt.Printf("k3s version: %s to %s\n", currentK8sVersion, k.KubeConf.Cluster.Kubernetes.Version)
+
+	if k.KubeConf.Cluster.KubeSphere.Enabled {
+		currentKsVersion, ok := k.PipelineCache.GetMustString(common.KubeSphereVersion)
+		if !ok {
+			return errors.New("get current KubeSphere version failed by pipeline cache")
+		}
+		fmt.Printf("kubesphere version: %s to %s\n", currentKsVersion, k.KubeConf.Cluster.KubeSphere.Version)
+	}
+	fmt.Println()
+
+	if k8sVersion, err := versionutil.ParseGeneric(k.KubeConf.Cluster.Kubernetes.Version); err == nil {
+		if cri, ok := k.PipelineCache.GetMustString(common.ClusterNodeCRIRuntimes); ok {
+			k8sV124 := versionutil.MustParseSemantic("v1.24.0")
+			if k8sVersion.AtLeast(k8sV124) && versionutil.MustParseSemantic(currentK8sVersion).LessThan(k8sV124) && strings.Contains(cri, "docker") {
+				fmt.Println("[Notice]")
+				fmt.Println("Pre-upgrade check failed. The container runtime of the current cluster is Docker.")
+				fmt.Println("Kubernetes v1.24 and later no longer support dockershim and Docker.")
+				fmt.Println("Make sure you have completed the migration from Docker to other container runtimes that are compatible with the Kubernetes CRI.")
+				fmt.Println("For more information, see:")
+				fmt.Println("https://kubernetes.io/docs/setup/production-environment/container-runtimes/#container-runtimes")
+				fmt.Println("https://kubernetes.io/blog/2022/02/17/dockershim-faq/")
+				fmt.Println("")
+			}
+		}
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	confirmOK := false
+	for !confirmOK {
+		fmt.Printf("Continue upgrading cluster? [yes/no]: ")
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			return err
+		}
+		input = strings.ToLower(strings.TrimSpace(input))
+
+		switch input {
+		case "yes", "y":
+			confirmOK = true
+		case "no", "n":
+			os.Exit(0)
+		default:
+			continue
+		}
+	}
+	return nil
+}

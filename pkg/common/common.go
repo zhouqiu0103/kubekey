@@ -78,6 +78,11 @@ const (
 	PlanK8sVersion         = "planK8sVersion"
 	NodeK8sVersion         = "NodeK8sVersion"
 
+	K3sVersion        = "k3sVersion"
+	NodeK3sVersion    = "NodeK3sVersion"
+	DesiredK3sVersion = "desiredK3sVersion"
+	PlanK3sVersion    = "planK3sVersion"
+
 	// ETCDModule
 	ETCDCluster = "etcdCluster"
 	ETCDName    = "etcdName"
