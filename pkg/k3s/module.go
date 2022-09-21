@@ -423,7 +423,7 @@ func (p *ProgressiveUpgradeModule) Init() {
 
 	syncBinary := &task.RemoteTask{
 		Name:     "SyncKubeBinary",
-		Desc:     "Synchronize kubernetes binaries",
+		Desc:     "Synchronize k3s binaries",
 		Hosts:    p.Runtime.GetHostsByRole(common.K8s),
 		Prepare:  new(NotEqualPlanVersion),
 		Action:   new(SyncKubeBinary),
@@ -445,7 +445,7 @@ func (p *ProgressiveUpgradeModule) Init() {
 
 	clusterStatus := &task.RemoteTask{
 		Name:     "GetClusterStatus",
-		Desc:     "Get kubernetes cluster status",
+		Desc:     "Get k3s cluster status",
 		Hosts:    p.Runtime.GetHostsByRole(common.Master),
 		Prepare:  new(NotEqualPlanVersion),
 		Action:   new(GetClusterStatus),
