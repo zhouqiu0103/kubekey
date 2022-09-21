@@ -424,7 +424,7 @@ func (p *ProgressiveUpgradeModule) Init() {
 	syncBinary := &task.RemoteTask{
 		Name:     "SyncKubeBinary",
 		Desc:     "Synchronize kubernetes binaries",
-		Hosts:    p.Runtime.GetHostsByRole(common.K3s),
+		Hosts:    p.Runtime.GetHostsByRole(common.K8s),
 		Prepare:  new(NotEqualPlanVersion),
 		Action:   new(SyncKubeBinary),
 		Parallel: true,
