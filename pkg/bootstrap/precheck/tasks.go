@@ -379,8 +379,8 @@ type CalculateMinK3sVersion struct {
 }
 
 func (g *CalculateMinK3sVersion) Execute(runtime connector.Runtime) error {
-	versionList := make([]*versionutil.Version, 0, len(runtime.GetHostsByRole(common.K3s)))
-	for _, host := range runtime.GetHostsByRole(common.K3s) {
+	versionList := make([]*versionutil.Version, 0, len(runtime.GetHostsByRole(common.K8s)))
+	for _, host := range runtime.GetHostsByRole(common.K8s) {
 		version, ok := host.GetCache().GetMustString(common.NodeK3sVersion)
 		if !ok {
 			return errors.Errorf("get node %s k3s version failed by host cache", host.GetName())
