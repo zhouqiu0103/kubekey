@@ -20,11 +20,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-<<<<<<< HEAD
-	
-=======
 	"github.com/kubesphere/kubekey/pkg/registry"
->>>>>>> b731d2f47ffabd0db9039bbe7a026dd90d8a5c18
 	"path/filepath"
 	"sort"
 	"os"
