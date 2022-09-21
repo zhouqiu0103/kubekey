@@ -21,4 +21,5 @@ const (
 	BinDir       = "/usr/local/bin"
 	OptCniBinDir = "/opt/cni/bin"
 	SystemdDir   = "/etc/systemd/system"
+	MntDir       = "/mnt/kubekey"
 )
