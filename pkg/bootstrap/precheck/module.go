@@ -190,7 +190,7 @@ func (k *K3sClusterPreCheckModule) Init() {
 	getAllNodesK3sVersion := &task.RemoteTask{
 		Name:     "GetAllNodesK3sVersion",
 		Desc:     "Get all nodes k3s version",
-		Hosts:    k.Runtime.GetHostsByRole(common.K3s),
+		Hosts:    k.Runtime.GetHostsByRole(common.K8s),
 		Action:   new(GetAllNodesK3sVersion),
 		Parallel: true,
 	}
