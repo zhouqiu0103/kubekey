@@ -20,12 +20,13 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/kubesphere/kubekey/pkg/registry"
+	"os"
 	"path/filepath"
 	"sort"
-	"os"
 	"strings"
 	"time"
+
+	"github.com/kubesphere/kubekey/pkg/registry"
 
 	kubekeyapiv1alpha2 "github.com/kubesphere/kubekey/apis/kubekey/v1alpha2"
 	kubekeyregistry "github.com/kubesphere/kubekey/pkg/bootstrap/registry"
@@ -515,7 +516,6 @@ func (s *SaveKubeConfig) Execute(_ connector.Runtime) error {
 	return nil
 }
 
-<<<<<<< HEAD
 type SetUpgradePlan struct {
 	common.KubeAction
 	Step UpgradeStep
@@ -625,7 +625,9 @@ type SetCurrentK3sVersion struct {
 
 func (s *SetCurrentK3sVersion) Execute(_ connector.Runtime) error {
 	s.PipelineCache.Set(common.K3sVersion, s.KubeConf.Cluster.Kubernetes.Version)
-=======
+	return nil
+}
+
 type GenerateK3sRegistryConfig struct {
 	common.KubeAction
 }
@@ -688,6 +690,5 @@ func (g *GenerateK3sRegistryConfig) Execute(runtime connector.Runtime) error {
 	if err := templateAction.Execute(runtime); err != nil {
 		return err
 	}
->>>>>>> b731d2f47ffabd0db9039bbe7a026dd90d8a5c18
 	return nil
 }

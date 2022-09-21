@@ -60,6 +60,15 @@ func (c *ClusterIsExist) PreCheck(_ connector.Runtime) (bool, error) {
 	}
 }
 
+type UsePrivateRegstry struct {
+	common.KubePrepare
+	Not bool
+}
+
+func (c *UsePrivateRegstry) PreCheck(_ connector.Runtime) (bool, error) {
+	return c.KubeConf.Cluster.Registry.PrivateRegistry != "", nil
+}
+
 type NotEqualPlanVersion struct {
 	common.KubePrepare
 }
