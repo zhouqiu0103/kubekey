@@ -345,15 +345,6 @@ type K3sUpgradeConfirm struct {
 }
 
 func (k *K3sUpgradeConfirm) Execute(runtime connector.Runtime) error {
-	pre := make([]map[string]string, len(runtime.GetAllHosts()), len(runtime.GetAllHosts()))
-	for i, host := range runtime.GetAllHosts() {
-		if v, ok := host.GetCache().Get(common.NodePreCheck); ok {
-			pre[i] = v.(map[string]string)
-		} else {
-			return errors.New("get node check result failed by host cache")
-		}
-	}
-
 	nodeStats, ok := k.PipelineCache.GetMustString(common.ClusterNodeStatus)
 	if !ok {
 		return errors.New("get cluster nodes status failed by pipeline cache")
@@ -362,11 +353,11 @@ func (k *K3sUpgradeConfirm) Execute(runtime connector.Runtime) error {
 	fmt.Println(nodeStats + "\n")
 
 	fmt.Println("Upgrade Confirmation:")
-	currentK8sVersion, ok := k.PipelineCache.GetMustString(common.K8sVersion)
+	currentK3sVersion, ok := k.PipelineCache.GetMustString(common.K3sVersion)
 	if !ok {
 		return errors.New("get current k3s version failed by pipeline cache")
 	}
-	fmt.Printf("k3s version: %s to %s\n", currentK8sVersion, k.KubeConf.Cluster.Kubernetes.Version)
+	fmt.Printf("k3s version: %s to %s\n", currentK3sVersion, k.KubeConf.Cluster.Kubernetes.Version)
 
 	if k.KubeConf.Cluster.KubeSphere.Enabled {
 		currentKsVersion, ok := k.PipelineCache.GetMustString(common.KubeSphereVersion)
@@ -380,7 +371,7 @@ func (k *K3sUpgradeConfirm) Execute(runtime connector.Runtime) error {
 	if k8sVersion, err := versionutil.ParseGeneric(k.KubeConf.Cluster.Kubernetes.Version); err == nil {
 		if cri, ok := k.PipelineCache.GetMustString(common.ClusterNodeCRIRuntimes); ok {
 			k8sV124 := versionutil.MustParseSemantic("v1.24.0")
-			if k8sVersion.AtLeast(k8sV124) && versionutil.MustParseSemantic(currentK8sVersion).LessThan(k8sV124) && strings.Contains(cri, "docker") {
+			if k8sVersion.AtLeast(k8sV124) && versionutil.MustParseSemantic(currentK3sVersion).LessThan(k8sV124) && strings.Contains(cri, "docker") {
 				fmt.Println("[Notice]")
 				fmt.Println("Pre-upgrade check failed. The container runtime of the current cluster is Docker.")
 				fmt.Println("Kubernetes v1.24 and later no longer support dockershim and Docker.")
